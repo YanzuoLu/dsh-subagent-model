@@ -20,12 +20,16 @@ Top-level sessions, including sessions forked from the session menu, are never c
 - A custom route is validated by dsh's LLM runtime before it is saved.
 - Settings persist in the `subagent_model` storage domain, `~/.dsh/storages/subagent_model.json` with the default JSON backend, and survive restarts.
 - No tool schema, agent preset, or tool configuration is changed. A workflow script can still pass `provider`/`model`, and a session override takes precedence over it.
+- A `subagent_fork` child carries the parent's whole history. A custom model whose context window is smaller than that history makes the fork's requests fail.
 
 ## Composer button
 
 The button renders in the composer's `conversation.input.right` slot, beside the model button, and is hidden in subagent views.
-It follows the composer's compact contract: when the control row is short of space, or a mobile layout pins compact mode, the label hides and only the icon stays.
-The menu lists the same model catalog as the official picker. Models with reasoning levels open a second pane for the effort.
+It shows a caption-toned "Subagent" prefix before the current setting, and follows the composer's compact contract: when the control row is short of space, or a mobile layout pins compact mode, the text hides and only the icon stays.
+
+The menu mirrors the official model picker. Its root pane holds the subagent model and subagent reasoning-effort cells.
+The model pane offers "Default (no override)", "Follow main model", and the official provider-grouped catalog, with search once more than four models are listed.
+Labels follow the dsh language preference (Chinese or English).
 
 ## Install
 
