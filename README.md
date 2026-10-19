@@ -8,7 +8,7 @@ The setting lives in a composer button next to the official model picker.
 Each top-level session has one of three settings. A session starts with no override.
 
 - **Default** — no override. Subagents keep dsh's own behavior, including a model a workflow script names in `agent()`.
-- **Follow main** — every subagent uses the session's current model and reasoning effort, including a model just picked in the official picker that has not been requested yet.
+- **Follow main** — every subagent uses the session's current model, including a model just picked in the official picker that has not been requested yet. It follows the session's reasoning effort too, unless a separate subagent effort is chosen; a chosen effort the current model lacks falls back to following the session.
 - **Custom** — every subagent uses the chosen provider, model, and reasoning effort.
 
 The override covers every in-process subagent below the session at any depth: `subagent`, `subagent_fork`, workflow `agent()` children, and Ralph workers.
@@ -29,7 +29,7 @@ It shows a caption-toned "Subagent" prefix before the current setting, and follo
 
 The menu mirrors the official model picker. Its root pane lists "Default (no override)" and "Follow main model", then the subagent model and subagent reasoning-effort cells.
 The model cell opens the official provider-grouped catalog, with search once more than four models are listed.
-The effort cell is always listed. It opens the effort levels for a custom model that has them, and otherwise shows, read-only, the effort subagents actually get.
+The effort cell is always listed. It opens the effort levels of the custom model, or of the main model when following it, and otherwise shows, read-only, the effort subagents actually get.
 Labels follow the dsh language preference (Chinese or English).
 
 ## Install

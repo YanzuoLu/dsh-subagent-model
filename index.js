@@ -19,11 +19,12 @@ const routeSchema = z.object({
 
 /**
  * One top-level session's override for every in-process subagent below it.
- * `inherit` follows the session's current model; `custom` pins one route.
- * A session without a record is not overridden.
+ * `inherit` follows the session's current model, optionally with its own
+ * reasoning effort; `custom` pins one route. A session without a record is
+ * not overridden.
  */
 const overrideSchema = z.discriminatedUnion('mode', [
-  z.object({ mode: z.literal('inherit') }),
+  z.object({ mode: z.literal('inherit'), reasoningEffort: z.string().min(1).optional() }),
   routeSchema.extend({ mode: z.literal('custom') }),
 ])
 
@@ -61,13 +62,31 @@ export async function apply(ctx) {
     return route === undefined || route === null ? undefined : route
   }
 
+  /**
+   * Whether a route's model offers a reasoning effort. The session can switch
+   * to a model without it after the effort was chosen; any other resolution
+   * failure is left for the request itself to report.
+   */
+  async function offersEffort(route, reasoningEffort) {
+    try {
+      await ctx.llm.resolveCallConfig({ provider: route.provider, model: route.model, reasoningEffort })
+      return true
+    } catch (error) {
+      return error?.code !== 'UNSUPPORTED_REASONING_EFFORT'
+    }
+  }
+
   /** The route a subagent must use now, or undefined to leave it untouched. */
-  function targetFor(agent) {
+  async function targetFor(agent) {
     if (agent.session.header.origin !== 'subagent') return undefined
     const owner = ownerOf(agent)
     const override = owner === undefined ? undefined : overrides.get(owner)
     if (override === undefined) return undefined
-    return override.mode === 'custom' ? override : currentRoute(owner)
+    if (override.mode === 'custom') return override
+    const route = currentRoute(owner)
+    if (route === undefined || override.reasoningEffort === undefined) return route
+    // A chosen effort the session's current model lacks falls back to following it.
+    return await offersEffort(route, override.reasoningEffort) ? { ...route, reasoningEffort: override.reasoningEffort } : route
   }
 
   // Prompt assembly runs before each request: decide the route once per step so
@@ -75,7 +94,7 @@ export async function apply(ctx) {
   const assembled = new WeakMap()
   ctx.on('system-prompt/assemble', async (assembly, context, next) => {
     const agent = context.agent
-    const target = agent === undefined ? undefined : targetFor(agent)
+    const target = agent === undefined ? undefined : await targetFor(agent)
     if (agent !== undefined) assembled.set(agent, target)
     const result = await next()
     if (target === undefined) return result
@@ -83,7 +102,7 @@ export async function apply(ctx) {
   })
   ctx.on('agent/request', async ({ agent }, next) => {
     const resolved = await next()
-    const target = assembled.has(agent) ? assembled.get(agent) : targetFor(agent)
+    const target = assembled.has(agent) ? assembled.get(agent) : await targetFor(agent)
     if (target === undefined) return resolved
     const { reasoningEffort: _effort, ...rest } = resolved
     return {
@@ -120,6 +139,11 @@ export async function apply(ctx) {
           provider: config.provider,
           model: config.model,
           ...config.reasoningEffort === undefined ? {} : { reasoningEffort: String(config.reasoningEffort) },
+        }
+      } else if (override.reasoningEffort !== undefined) {
+        const route = currentRoute(sessionId)
+        if (route !== undefined && !await offersEffort(route, override.reasoningEffort)) {
+          throw new Error(`model ${route.provider}/${route.model} does not support reasoning effort "${override.reasoningEffort}"`)
         }
       }
       await overrides.put(sessionId, stored)
