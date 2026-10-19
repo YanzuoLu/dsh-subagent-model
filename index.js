@@ -2,10 +2,14 @@ import { z } from 'zod'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 
 export const name = 'subagent-model'
-export const inject = ['agents', 'llm', 'storageDomain', 'connection', 'webServer']
+export const inject = ['agents', 'llm', 'storageDomain', 'connection']
 
-/** Browser-facing RPC channel: POST /subagent-model/<endpoint>. */
-export const CHANNEL = '/subagent-model'
+/**
+ * Browser-facing routes: POST <ROUTE_PREFIX>/get and <ROUTE_PREFIX>/set with a
+ * JSON body. They sit on the shared /api channel, so the Connection's host
+ * fence and browser-session cookie check run before them.
+ */
+export const ROUTE_PREFIX = '/api/subagent-model'
 
 const routeSchema = z.object({
   provider: z.string().min(1),
@@ -123,15 +127,18 @@ export async function apply(ctx) {
     },
   }
 
-  ctx.connection.rpc.handle(CHANNEL, async (endpoint, payload, signal) => {
-    const handler = Object.hasOwn(endpoints, endpoint) ? endpoints[endpoint] : undefined
-    if (handler === undefined) {
-      return { ok: false, error: { code: 'subagent-model/unknown-endpoint', message: `unknown endpoint ${endpoint}`, details: {} } }
-    }
-    try {
-      return { ok: true, value: await handler(payload, signal) }
-    } catch (error) {
-      return { ok: false, error: { code: 'subagent-model/rejected', message: error instanceof Error ? error.message : String(error), details: {} } }
-    }
-  })
+  for (const [endpoint, handler] of Object.entries(endpoints)) {
+    ctx.connection.fetch.register({
+      path: `${ROUTE_PREFIX}/${endpoint}`,
+      methods: ['POST'],
+      requestBody: 'buffered',
+      async fetch(request) {
+        try {
+          return Response.json({ ok: true, value: await handler(await request.json(), request.signal) })
+        } catch (error) {
+          return Response.json({ ok: false, error: { message: error instanceof Error ? error.message : String(error) } })
+        }
+      },
+    })
+  }
 }
