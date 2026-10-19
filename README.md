@@ -27,8 +27,9 @@ Top-level sessions, including sessions forked from the session menu, are never c
 The button renders in the composer's `conversation.input.right` slot, beside the model button, and is hidden in subagent views.
 It shows a caption-toned "Subagent" prefix before the current setting, and follows the composer's compact contract: when the control row is short of space, or a mobile layout pins compact mode, the text hides and only the icon stays.
 
-The menu mirrors the official model picker. Its root pane holds the subagent model and subagent reasoning-effort cells.
-The model pane offers "Default (no override)", "Follow main model", and the official provider-grouped catalog, with search once more than four models are listed.
+The menu mirrors the official model picker. Its root pane lists "Default (no override)" and "Follow main model", then the subagent model and subagent reasoning-effort cells.
+The model cell opens the official provider-grouped catalog, with search once more than four models are listed.
+The effort cell is always listed. It opens the effort levels for a custom model that has them, and otherwise shows, read-only, the effort subagents actually get.
 Labels follow the dsh language preference (Chinese or English).
 
 ## Install
