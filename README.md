@@ -15,6 +15,8 @@ The override covers every in-process subagent below the session at any depth: `s
 All of them are created through dsh's in-process subagent providers, so one host-side `agent/request` listener sees each of their requests.
 Top-level sessions, including sessions forked from the session menu, are never changed.
 
+With the current dsh-side-chat plugin, a new side chat copies its main session's subagent setting, including any separately selected reasoning effort. The copy is independent, and existing or resumed side chats are not reset. “Follow main model” in a side chat follows that side chat's own model. Its subagents resolve the side chat's setting rather than the original main session's later choices.
+
 - The setting applies to every subsequent subagent request, so changing it also switches running subagents at their next step. Their next request is then uncached.
 - The subagent's `{{provider}}`/`{{model}}` prompt variables follow the override, so its persona names the model it actually runs on.
 - A custom route is validated by dsh's LLM runtime before it is saved.
