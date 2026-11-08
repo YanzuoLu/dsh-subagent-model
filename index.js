@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
+import { closestEffort, sameModel, withEffort } from './lib/reasoning.js'
 
 export const name = 'subagent-model'
 export const inject = ['agents', 'llm', 'storageDomain', 'connection']
@@ -35,7 +36,10 @@ const domainSpec = defineDomain({
 })
 
 const requestSchema = z.object({ sessionId: z.string().min(1) })
-const setRequestSchema = requestSchema.extend({ override: overrideSchema.nullable() })
+const setRequestSchema = requestSchema.extend({
+  override: overrideSchema.nullable(),
+  preserveEffort: z.boolean().optional(),
+})
 
 export async function apply(ctx) {
   const domain = await ctx.storageDomain.open(domainSpec)
@@ -62,18 +66,20 @@ export async function apply(ctx) {
     return route === undefined || route === null ? undefined : route
   }
 
-  /**
-   * Whether a route's model offers a reasoning effort. The session can switch
-   * to a model without it after the effort was chosen; any other resolution
-   * failure is left for the request itself to report.
-   */
-  async function offersEffort(route, reasoningEffort) {
-    try {
-      await ctx.llm.resolveCallConfig({ provider: route.provider, model: route.model, reasoningEffort })
-      return true
-    } catch (error) {
-      return error?.code !== 'UNSUPPORTED_REASONING_EFFORT'
-    }
+  /** Clamp an existing preference against the exact target model's capabilities. */
+  async function carryEffort(route, effort, signal) {
+    if (effort === undefined) return route
+    const model = await ctx.llm.resolveModelInfo(route.provider, route.model, signal)
+    return withEffort(route, closestEffort(effort, model.reasoning))
+  }
+
+  /** The effective source for a switch away from a custom or inherited model. */
+  async function previousRoute(sessionId) {
+    const override = overrides.get(sessionId)
+    if (override?.mode === 'custom') return override
+    const route = currentRoute(sessionId)
+    if (route === undefined || override?.reasoningEffort === undefined) return route
+    return carryEffort(route, override.reasoningEffort)
   }
 
   /** The route a subagent must use now, or undefined to leave it untouched. */
@@ -85,8 +91,7 @@ export async function apply(ctx) {
     if (override.mode === 'custom') return override
     const route = currentRoute(owner)
     if (route === undefined || override.reasoningEffort === undefined) return route
-    // A chosen effort the session's current model lacks falls back to following it.
-    return await offersEffort(route, override.reasoningEffort) ? { ...route, reasoningEffort: override.reasoningEffort } : route
+    return carryEffort(route, override.reasoningEffort)
   }
 
   // Prompt assembly runs before each request: decide the route once per step so
@@ -119,7 +124,7 @@ export async function apply(ctx) {
       return { override: overrides.get(sessionId) ?? null }
     },
     async set(payload, signal) {
-      const { sessionId, override } = setRequestSchema.parse(payload)
+      const { sessionId, override, preserveEffort } = setRequestSchema.parse(payload)
       if (ctx.agents.get(sessionId)?.session.header.origin === 'subagent') {
         throw new Error('subagent sessions follow their top-level session')
       }
@@ -129,10 +134,14 @@ export async function apply(ctx) {
       }
       let stored = override
       if (override.mode === 'custom') {
+        const previous = preserveEffort ? await previousRoute(sessionId) : undefined
+        const target = previous === undefined || sameModel(previous, override)
+          ? override
+          : await carryEffort(override, previous.reasoningEffort, signal)
         const config = await ctx.llm.resolveCallConfig({
-          provider: override.provider,
-          model: override.model,
-          ...override.reasoningEffort === undefined ? {} : { reasoningEffort: override.reasoningEffort },
+          provider: target.provider,
+          model: target.model,
+          ...target.reasoningEffort === undefined ? {} : { reasoningEffort: target.reasoningEffort },
         }, signal)
         stored = {
           mode: 'custom',
@@ -142,8 +151,8 @@ export async function apply(ctx) {
         }
       } else if (override.reasoningEffort !== undefined) {
         const route = currentRoute(sessionId)
-        if (route !== undefined && !await offersEffort(route, override.reasoningEffort)) {
-          throw new Error(`model ${route.provider}/${route.model} does not support reasoning effort "${override.reasoningEffort}"`)
+        if (route !== undefined) {
+          await ctx.llm.resolveCallConfig(withEffort(route, override.reasoningEffort), signal)
         }
       }
       await overrides.put(sessionId, stored)

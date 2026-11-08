@@ -1,7 +1,7 @@
 {
   "name": "dsh-subagent-model",
-  "version": "0.1.0",
-  "description": "Per-session model and reasoning-effort override for every in-process dsh subagent",
+  "version": "0.2.0",
+  "description": "Per-session subagent models and preserved reasoning effort across main and subagent model switches",
   "type": "module",
   "main": "index.js",
   "exports": {
@@ -10,6 +10,12 @@
     "./package.json": "./package.json"
   },
   "files": ["index.js", "lib", "cordis.patch.yml"],
+  "scripts": {
+    "build": "node scripts/build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  },
   "license": "MIT",
   "author": "Yanzuo Lu",
   "repository": {
